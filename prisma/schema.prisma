@@ -1,0 +1,140 @@
+// CyberTrace BF — Schéma de données (cahier des charges §6)
+// Générateur Prisma 7 « prisma-client » (TypeScript, sans engine Rust).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Rôles et statuts (cahier des charges §3)
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  ANALYSTE
+  LECTEUR
+}
+
+enum UserStatut {
+  ACTIF
+  SUSPENDU
+}
+
+enum CaseStatut {
+  OUVERT
+  EN_COURS
+  CLOTURE
+}
+
+// Actions de conservation tracées pour chaque preuve (cahier des charges §6)
+enum CustodyAction {
+  ENREGISTREMENT
+  VERIFICATION_OK
+  VERIFICATION_ECHEC
+  TELECHARGEMENT
+  EXPORT_RAPPORT
+}
+
+// ---------------------------------------------------------------------------
+// Utilisateur
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String      @id @default(uuid())
+  nom           String
+  email         String      @unique
+  role          Role        @default(ANALYSTE)
+  statut        UserStatut  @default(ACTIF)
+  dateCreation  DateTime    @default(now())
+  dossiersCrees Case[]      @relation("CaseCreator")
+  preuvesAjoutees Evidence[] @relation("EvidenceAuthor")
+  evenements    CustodyEvent[]
+  journaux      AuditLog[]
+}
+
+// ---------------------------------------------------------------------------
+// Dossier d'incident
+// ---------------------------------------------------------------------------
+
+model Case {
+  id            String      @id @default(uuid())
+  reference     String      @unique // ex. CT-2026-001
+  titre         String
+  description   String?
+  categorie     String?     // ex. fraude a la vente en ligne, usurpation...
+  statut        CaseStatut  @default(OUVERT)
+  creeParId     String
+  creePar       User        @relation("CaseCreator", fields: [creeParId], references: [id])
+  dateCreation  DateTime    @default(now())
+  preuves       Evidence[]
+}
+
+// ---------------------------------------------------------------------------
+// Preuve numerique
+// ---------------------------------------------------------------------------
+
+model Evidence {
+  id                  String         @id @default(uuid())
+  caseId              String
+  dossier             Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  nomOriginal         String         // nom declare a l'import (affichage uniquement)
+  cleStockage         String         // chemin relatif prive, genere par l'application
+  extension           String         // .pdf, .png, ... (determinee par l'application)
+  empreinteInitiale   String         // SHA-256 hex calcule cote serveur a l'enregistrement
+  taille              Int            // en octets
+  mimeType            String         // type MIME detecte cote serveur (magic bytes)
+  description         String?
+  provenanceDeclaree  String?        // provenance declaree par le deposant
+  dateCollecteDeclaree DateTime?     // date de collecte DECLAREE (non verifiable)
+  dateEnregistrement  DateTime       @default(now()) // horodatage serveur
+  ajouteParId         String?
+  ajoutePar           User?          @relation("EvidenceAuthor", fields: [ajouteParId], references: [id])
+  evenements          CustodyEvent[]
+
+  @@index([caseId])
+}
+
+// ---------------------------------------------------------------------------
+// Evenement de conservation (chaine de custodie d'une preuve)
+// ---------------------------------------------------------------------------
+
+model CustodyEvent {
+  id            String        @id @default(uuid())
+  evidenceId    String
+  preuve        Evidence      @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  acteurId      String?
+  acteur        User?         @relation(fields: [acteurId], references: [id])
+  acteurLabel   String        // nom de l'acteur au moment de l'evenement (instantane)
+  action        CustodyAction
+  horodatage    DateTime      @default(now()) // TOUJOURS horodatage serveur
+  details       Json?
+  // Integrite chainee du journal (fonction avancee du cahier des charges) :
+  // hashPrecedent = hash de l'evenement precedent de cette meme preuve
+  // hashEvenement = SHA-256(hashPrecedent + date + acteur + action + details)
+  hashPrecedent String?
+  hashEvenement String
+
+  @@index([evidenceId])
+}
+
+// ---------------------------------------------------------------------------
+// Journal d'audit global (operations sensibles de l'application)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  utilisateur User?   @relation(fields: [userId], references: [id])
+  action     String   // ex. UPLOAD_EVIDENCE, VERIFY_EVIDENCE...
+  ressource  String   // ex. evidence:<id>
+  horodatage DateTime @default(now())
+  resultat   String   // SUCCES | ECHEC
+  details    Json?
+
+  @@index([horodatage])
+}

@@ -43,6 +43,15 @@ export type ReportEvidence = {
   verifications: ReportVerification[];
 };
 
+export type ReportSite = {
+  url: string;
+  hote: string;
+  score: number;
+  verdict: "SURE" | "SUSPECTE" | "FRAUDULEUSE";
+  analyseLe: Date;
+  indicateurs: string[];
+};
+
 export type ReportEvent = {
   horodatage: Date;
   acteur: string;
@@ -59,6 +68,7 @@ export type CaseReportData = {
   creePar: string;
   dateCreation: Date;
   evidence: ReportEvidence[];
+  sites: ReportSite[];
   events: ReportEvent[];
   generationDate: Date;
   generateur: string;
@@ -202,9 +212,40 @@ export function renderCaseReport(out: Writable, data: CaseReportData): Promise<v
       y += 6;
     });
 
-    // --- 3. Historique ------------------------------------------------------
+    // --- 3. Sites frauduleux analyses ---------------------------------------
     y += 8;
-    sectionTitle(`3. Historique des operations (${data.events.length})`);
+    sectionTitle(`3. Sites frauduleux analyses (${data.sites.length})`);
+
+    if (data.sites.length === 0) {
+      doc.font("Helvetica-Oblique").fontSize(9).fillColor(COLORS.gray);
+      doc.text("Aucune analyse de site frauduleux dans ce dossier.", MARGIN, y);
+      y += 16;
+    } else {
+      data.sites.forEach((site) => {
+        ensureSpace(42);
+        const couleur =
+          site.verdict === "FRAUDULEUSE" ? COLORS.red : site.verdict === "SUSPECTE" ? "#B7791F" : COLORS.green;
+        doc.font("Helvetica-Bold").fontSize(10).fillColor(couleur);
+        doc.text(`${site.verdict} — risque ${site.score}/100`, MARGIN, y);
+        doc.font("Helvetica").fontSize(9).fillColor(COLORS.text);
+        doc.text(site.url.slice(0, 110), MARGIN + 140, y, { width: contentWidth - 140 });
+        y = doc.y + 4;
+        doc.font("Helvetica").fontSize(8).fillColor(COLORS.gray);
+        doc.text(`Analyse le ${fmtDate(site.analyseLe)}`, MARGIN + 12, y);
+        y = doc.y + 3;
+        if (site.indicateurs.length > 0) {
+          doc.font("Helvetica").fontSize(8).fillColor(COLORS.text);
+          doc.text(`Indicateurs : ${site.indicateurs.slice(0, 5).join(" ; ")}`, MARGIN + 12, y, {
+            width: contentWidth - 12,
+          });
+          y = doc.y + 4;
+        }
+      });
+    }
+
+    // --- 4. Historique ------------------------------------------------------
+    y += 8;
+    sectionTitle(`4. Historique des operations (${data.events.length})`);
 
     if (data.events.length === 0) {
       doc.font("Helvetica-Oblique").fontSize(9).fillColor(COLORS.gray);

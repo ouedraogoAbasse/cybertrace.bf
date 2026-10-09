@@ -36,6 +36,7 @@ yarn-error.log*
 
 # preuves numeriques (stockage prive — jamais dans Git)
 /storage
+/storage-test
 
 # client Prisma genere (regenerer avec : npx prisma generate)
 /src/generated

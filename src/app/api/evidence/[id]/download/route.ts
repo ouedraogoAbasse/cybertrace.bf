@@ -10,6 +10,7 @@ import { Readable } from "node:stream";
 import { prisma } from "@/lib/prisma";
 import { resolveActor, actorLabel, canRead } from "@/lib/actor";
 import { audit, recordCustodyEvent } from "@/lib/custody";
+import { decryptStream } from "@/lib/hash";
 import { STORAGE_ROOT } from "@/lib/storage";
 import { ERR, jsonError } from "@/lib/http";
 import path from "node:path";
@@ -53,13 +54,31 @@ export async function GET(req: Request, ctx: Ctx) {
     resultat: "SUCCES",
   });
 
-  const stream = Readable.toWeb(fs.createReadStream(filePath)) as ReadableStream;
+  // Le fichier est chiffre au repos : on streame le contenu clefere.
+  // Un fichier altere hors-application ne peut pas etre dechiffre (MAC GCM) :
+  // on le signale clairement plutot que de laisser une erreur technique.
+  let fluxClair;
+  try {
+    fluxClair = await decryptStream(filePath);
+  } catch {
+    await audit({
+      userId: actor.id,
+      action: "DOWNLOAD_EVIDENCE",
+      ressource: `evidence:${id}`,
+      resultat: "ECHEC",
+      details: { erreur: "dechiffrement impossible : fichier altere" },
+    });
+    return jsonError(
+      409,
+      "Le fichier de preuve est altere : dechiffrement impossible",
+      "INTEGRITY_BROKEN",
+    );
+  }
   const nomFichier = `preuve-${evidence.id}${evidence.extension}`;
 
-  return new Response(stream, {
+  return new Response(Readable.toWeb(fluxClair) as ReadableStream, {
     headers: {
       "Content-Type": evidence.mimeType,
-      "Content-Length": String(evidence.taille),
       // Nom d'origine fourni en parametre RFC 5987 (accents acceptes).
       "Content-Disposition": `attachment; filename="${nomFichier}"; filename*=UTF-8''${encodeURIComponent(evidence.nomOriginal)}`,
       "Cache-Control": "no-store",

@@ -8,7 +8,7 @@
 import { prisma } from "@/lib/prisma";
 import { resolveActor, actorLabel, canWrite } from "@/lib/actor";
 import { audit, recordCustodyEvent, verifyCustodyChain } from "@/lib/custody";
-import { empreintesIdentiques, sha256File } from "@/lib/hash";
+import { decryptStream, empreintesIdentiques, sha256Stream } from "@/lib/hash";
 import { STORAGE_ROOT } from "@/lib/storage";
 import { ERR, jsonError } from "@/lib/http";
 import path from "node:path";
@@ -38,8 +38,19 @@ export async function POST(req: Request, ctx: Ctx) {
     return jsonError(410, "Fichier de preuve absent du stockage prive", "STORAGE_MISSING");
   }
 
-  const empreinteRecalculee = await sha256File(filePath);
-  const identique = empreintesIdentiques(evidence.empreinteInitiale, empreinteRecalculee);
+  // Deciffrage puis recalcul du SHA-256 du contenu clair. Si le fichier chiffre
+  // a ete altere hors de l'application, le deciffrage echoue (MAC GCM) : c'est
+  // une alteration, pas une erreur technique.
+  let empreinteRecalculee: string | null = null;
+  let motifAlteration: string | null = null;
+  try {
+    empreinteRecalculee = await sha256Stream(await decryptStream(filePath));
+  } catch {
+    motifAlteration = "Chiffrement AES-GCM : le fichier stocke a ete altere hors de l'application";
+  }
+
+  const identique =
+    empreinteRecalculee !== null && empreintesIdentiques(evidence.empreinteInitiale, empreinteRecalculee);
   const verdict = identique ? "IDENTIQUE" : "MODIFIE";
 
   const evenement = await recordCustodyEvent({
@@ -49,8 +60,9 @@ export async function POST(req: Request, ctx: Ctx) {
     action: identique ? "VERIFICATION_OK" : "VERIFICATION_ECHEC",
     details: {
       empreinteInitiale: evidence.empreinteInitiale,
-      empreinteRecalculee,
+      empreinteRecalculee: empreinteRecalculee ?? "INDECRYPTABLE",
       verdict,
+      ...(motifAlteration ? { motif: motifAlteration } : {}),
     },
   });
 
@@ -68,6 +80,7 @@ export async function POST(req: Request, ctx: Ctx) {
     verdict,
     empreinteInitiale: evidence.empreinteInitiale,
     empreinteRecalculee,
+    motif: motifAlteration,
     verifieLe: evenement.horodatage,
     chaineCustodie: chaine,
   });

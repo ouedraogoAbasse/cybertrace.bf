@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" role="img" aria-label="CyberTrace BF">
+  <defs>
+    <linearGradient id="bouclier" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2E86FF"/>
+      <stop offset="100%" stop-color="#0B3C8C"/>
+    </linearGradient>
+    <linearGradient id="fond" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0B1526"/>
+      <stop offset="100%" stop-color="#111F38"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond -->
+  <rect width="360" height="360" rx="24" fill="url(#fond)"/>
+
+  <!-- Bouclier -->
+  <path d="M180 48 L272 84 V170 C272 232 230 272 180 292 C130 272 88 232 88 170 V84 Z"
+        fill="url(#bouclier)" stroke="#5FA8FF" stroke-width="3"/>
+
+  <!-- Empreinte digitale (arcs concentriques) -->
+  <g fill="none" stroke="#BFE0FF" stroke-width="4" stroke-linecap="round">
+    <path d="M148 170 A32 32 0 0 1 212 170"/>
+    <path d="M136 170 A44 44 0 0 1 224 170"/>
+    <path d="M124 172 A56 56 0 0 1 236 172"/>
+    <path d="M158 176 A22 22 0 0 1 202 176"/>
+    <line x1="180" y1="152" x2="180" y2="196"/>
+  </g>
+
+  <!-- Loupe -->
+  <circle cx="238" cy="212" r="30" fill="#0B1526" fill-opacity="0.55" stroke="#F2C14E" stroke-width="5"/>
+  <line x1="259" y1="233" x2="286" y2="260" stroke="#F2C14E" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- Ruban aux couleurs du Burkina -->
+  <rect x="70" y="300" width="90" height="7" rx="3.5" fill="#EF2B2D"/>
+  <rect x="200" y="300" width="90" height="7" rx="3.5" fill="#009E49"/>
+  <path d="M180 296 l4.5 9.2 10.2 1.5 -7.4 7.2 1.8 10.1 -9.1 -4.8 -9.1 4.8 1.8 -10.1 -7.4 -7.2 10.2 -1.5 Z" fill="#F2C14E"/>
+
+  <!-- Nom -->
+  <text x="180" y="336" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif"
+        font-size="26" font-weight="700" fill="#FFFFFF">Cyber<tspan fill="#5FA8FF">Trace</tspan>
+    <tspan fill="#F2C14E"> BF</tspan>
+  </text>
+</svg>

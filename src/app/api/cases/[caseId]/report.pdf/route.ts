@@ -33,6 +33,7 @@ export async function GET(req: Request, ctx: Ctx) {
           evenements: { orderBy: [{ horodatage: "asc" }, { id: "asc" }] },
         },
       },
+      sites: { orderBy: { analyseLe: "desc" } },
     },
   });
   if (!dossier) return ERR.DOSIER_TROUVE();
@@ -103,6 +104,14 @@ export async function GET(req: Request, ctx: Ctx) {
             empreinteRecalculee: String(details.empreinteRecalculee ?? "—"),
           };
         }),
+    })),
+    sites: dossier.sites.map((s) => ({
+      url: s.url,
+      hote: s.hote,
+      score: s.score,
+      verdict: s.verdict,
+      analyseLe: s.analyseLe,
+      indicateurs: ((s.indicateurs ?? []) as { message?: string }[]).map((i) => i.message ?? "").filter(Boolean),
     })),
     events: evenements,
     generationDate: new Date(),

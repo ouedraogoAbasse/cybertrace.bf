@@ -14,7 +14,7 @@ import { Readable } from "node:stream";
 import { prisma } from "@/lib/prisma";
 import { resolveActor, actorLabel, canWrite, canRead } from "@/lib/actor";
 import { audit, recordCustodyEvent } from "@/lib/custody";
-import { saveAndHash } from "@/lib/hash";
+import { saveEncryptAndHash } from "@/lib/hash";
 import {
   caseStorageDir,
   ensureDir,
@@ -83,14 +83,14 @@ export async function POST(req: Request, ctx: Ctx) {
   const filePath = evidenceFilePath(dossier.id, evidenceId, extension);
   ensureDir(caseStorageDir(dossier.id));
 
-  // Ecriture + empreinte dans un seul passage sur le flux.
+  // Ecriture CHIFFREE + empreinte du contenu clair dans un seul passage.
   let sha256: string;
   let taille: number;
   try {
     const nodeStream = Readable.fromWeb(
       file.stream() as unknown as import("node:stream/web").ReadableStream,
     );
-    ({ sha256, taille } = await saveAndHash(nodeStream, filePath));
+    ({ sha256, taille } = await saveEncryptAndHash(nodeStream, filePath));
   } catch (e) {
     await removeFile(filePath);
     await audit({
@@ -111,6 +111,12 @@ export async function POST(req: Request, ctx: Ctx) {
     const d = new Date(collecteBrute);
     if (!Number.isNaN(d.getTime())) dateCollecteDeclaree = d;
   }
+
+  // Detection de doublon : une preuve de meme contenu existe deja dans le dossier.
+  const doublonExistant = await prisma.evidence.findFirst({
+    where: { caseId: dossier.id, empreinteInitiale: sha256 },
+    select: { id: true, nomOriginal: true, dateEnregistrement: true },
+  });
 
   try {
     const evidence = await prisma.evidence.create({
@@ -153,7 +159,18 @@ export async function POST(req: Request, ctx: Ctx) {
       details: { caseId: dossier.id, empreinteInitiale: sha256, taille },
     });
 
-    return Response.json({ evidence }, { status: 201 });
+    return Response.json(
+      {
+        evidence,
+        doublon: doublonExistant
+          ? {
+              message: "Un fichier de contenu identique existe deja dans ce dossier",
+              de: doublonExistant,
+            }
+          : null,
+      },
+      { status: 201 },
+    );
   } catch (e) {
     // Transaction echouee : on ne laisse aucun fichier orphelin sur le disque.
     await removeFile(filePath);

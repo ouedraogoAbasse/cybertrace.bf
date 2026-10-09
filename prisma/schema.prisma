@@ -53,6 +53,7 @@ model User {
   dateCreation  DateTime    @default(now())
   dossiersCrees Case[]      @relation("CaseCreator")
   preuvesAjoutees Evidence[] @relation("EvidenceAuthor")
+  analysesSites SiteCheck[] @relation("SiteAnalyses")
   evenements    CustodyEvent[]
   journaux      AuditLog[]
 }
@@ -72,6 +73,36 @@ model Case {
   creePar       User        @relation("CaseCreator", fields: [creeParId], references: [id])
   dateCreation  DateTime    @default(now())
   preuves       Evidence[]
+  sites         SiteCheck[]
+}
+
+// ---------------------------------------------------------------------------
+// Analyse d'un site frauduleux (fonctionnalite additionnelle)
+// ---------------------------------------------------------------------------
+
+enum RiskVerdict {
+  SURE      // score faible
+  SUSPECTE  // signes d'alerte
+  FRAUDULEUSE // multiples indicateurs
+}
+
+model SiteCheck {
+  id             String   @id @default(uuid())
+  url            String   // URL saisie par l'enqueteur
+  urlNormalisee  String
+  hote           String
+  score          Int      // 0-100 : probabilite de fraude
+  verdict        RiskVerdict
+  indicateurs    Json     // [{ code, gravite, message, poids }]
+  contenuAnalyse Boolean  @default(false) // la page a-t-elle pu etre recuperee
+  dureeMs        Int?
+  caseId         String?
+  dossier        Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  effectueParId  String?
+  effectuePar    User?    @relation("SiteAnalyses", fields: [effectueParId], references: [id])
+  analyseLe      DateTime @default(now()) // horodatage serveur
+
+  @@index([caseId])
 }
 
 // ---------------------------------------------------------------------------

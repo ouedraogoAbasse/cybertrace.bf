@@ -3,6 +3,9 @@
  * Coquille de l'application : en-tete (logo, navigation, selecteur de compte
  * de demonstration) et pied de page.
  *
+ * - Desktop : logo a gauche, navigation centree, compte a droite.
+ * - Mobile  : navigation repliee derriere un bouton « hamburger ».
+ *
  * Le selecteur choisit un compte actif ; son identifiant part dans l'en-tête
  * x-user-id de tous les appels API (voir src/lib/client.ts). A remplacer par
  * la vraie connexion du Membre 1.
@@ -15,7 +18,8 @@ import { useEffect, useState } from "react";
 import { apiFetch, changerCompte, lireCompte, useCompte, type Compte, type Role } from "@/lib/client";
 
 const LIENS = [
-  { href: "/", libelle: "Tableau de bord" },
+  { href: "/", libelle: "Accueil" },
+  { href: "/tableau-de-bord", libelle: "Tableau de bord" },
   { href: "/dossiers", libelle: "Dossiers" },
   { href: "/detection", libelle: "Détection" },
   { href: "/demo", libelle: "Démo jury" },
@@ -31,6 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const chemin = usePathname();
   const [compte, setCompte, comptePret] = useCompte();
   const [comptes, setComptes] = useState<Compte[]>([]);
+  const [menuOuvert, setMenuOuvert] = useState(false);
 
   // Liste des comptes de demonstration ; aucun compte -> selection par defaut
   // de l'analyste (l'API aurait de toute facon retombe sur le compte « dev »).
@@ -47,11 +52,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => setComptes([]));
   }, []);
 
+  const estActif = (href: string) =>
+    href === "/" ? chemin === "/" : chemin.startsWith(href);
+
+  const styleLien = (href: string) =>
+    `rounded-lg px-3 py-1.5 transition-colors ${
+      estActif(href)
+        ? "bg-[#F2C14E]/15 font-semibold text-[#F2C14E]"
+        : "text-slate-300 hover:bg-slate-700/50 hover:text-white"
+    }`;
+
   return (
     <div className="flex min-h-screen flex-col bg-[#0B1526] text-slate-200">
       {/* En-tête */}
       <header className="sticky top-0 z-20 border-b border-slate-700 bg-[#0B1526]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
           <Link href="/" className="flex items-center gap-3">
             <Image src="/logo.jpeg" alt="CyberTrace BF" width={40} height={40} priority className="rounded-lg" />
             <span className="flex flex-col leading-tight">
@@ -64,30 +79,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
 
-          <nav className="order-3 flex flex-1 flex-wrap gap-1 text-sm md:order-none">
-            {LIENS.map((l) => {
-              const actif = l.href === "/" ? chemin === "/" : chemin.startsWith(l.href);
-              return (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className={`rounded-lg px-3 py-1.5 transition-colors ${
-                    actif
-                      ? "bg-[#F2C14E]/15 font-semibold text-[#F2C14E]"
-                      : "text-slate-300 hover:bg-slate-700/50 hover:text-white"
-                  }`}
-                >
-                  {l.libelle}
-                </Link>
-              );
-            })}
+          {/* Navigation desktop : centree */}
+          <nav className="mx-auto hidden items-center gap-1 text-sm md:flex">
+            {LIENS.map((l) => (
+              <Link key={l.href} href={l.href} className={styleLien(l.href)}>
+                {l.libelle}
+              </Link>
+            ))}
           </nav>
 
-          {/* Compte de demonstration */}
-          <div className="order-2 flex items-center gap-2 md:order-none">
+          {/* Compte de demonstration + bouton menu */}
+          <div className="ml-auto flex items-center gap-2 md:ml-0">
             {compte && (
               <span
-                className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${COULEUR_ROLE[compte.role]}`}
+                className={`hidden rounded px-1.5 py-0.5 text-[10px] font-bold sm:inline ${COULEUR_ROLE[compte.role]}`}
               >
                 {compte.role}
               </span>
@@ -98,7 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 const choisi = comptes.find((u) => u.id === e.target.value);
                 if (choisi) setCompte(choisi);
               }}
-              className="max-w-[190px] truncate rounded-lg border border-slate-600 bg-[#111F38] px-2 py-1.5 text-xs text-white focus:border-[#F2C14E] focus:outline-none"
+              className="max-w-[150px] truncate rounded-lg border border-slate-600 bg-[#111F38] px-2 py-1.5 text-xs text-white focus:border-[#F2C14E] focus:outline-none sm:max-w-[190px]"
               title="Compte de démonstration (l'authentification réelle viendra avec le Membre 1)"
             >
               {!comptePret || !compte ? <option value="">—</option> : null}
@@ -108,7 +113,58 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </option>
               ))}
             </select>
+
+            {/* Hamburger (mobile) */}
+            <button
+              type="button"
+              onClick={() => setMenuOuvert((v) => !v)}
+              aria-label={menuOuvert ? "Fermer le menu" : "Ouvrir le menu"}
+              aria-expanded={menuOuvert}
+              className="rounded-lg border border-slate-600 p-2 text-slate-300 hover:border-[#F2C14E] hover:text-[#F2C14E] md:hidden"
+            >
+              <svg
+                className="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                aria-hidden
+              >
+                {menuOuvert ? (
+                  <>
+                    <path d="M6 6l12 12" />
+                    <path d="M18 6L6 18" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M4 7h16" />
+                    <path d="M4 12h16" />
+                    <path d="M4 17h16" />
+                  </>
+                )}
+              </svg>
+            </button>
           </div>
+
+          {/* Navigation mobile : deroulante */}
+          {menuOuvert && (
+            <nav className="w-full border-t border-slate-700 pt-2 md:hidden">
+              <ul className="flex flex-col gap-1 text-sm">
+                {LIENS.map((l) => (
+                  <li key={l.href}>
+                    <Link
+                      href={l.href}
+                      onClick={() => setMenuOuvert(false)}
+                      className={`block ${styleLien(l.href)}`}
+                    >
+                      {l.libelle}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
         </div>
       </header>
 

@@ -28,7 +28,8 @@ curl -X POST http://localhost:3000/api/dev/seed
 
 # 5. Lancer
 npm run dev
-# → application :        http://localhost:3000/
+# → accueil :            http://localhost:3000/
+# → tableau de bord :    http://localhost:3000/tableau-de-bord
 # → dossiers :           http://localhost:3000/dossiers
 # → détection d'URL :    http://localhost:3000/detection
 # → scénario du jury :   http://localhost:3000/demo
@@ -67,7 +68,8 @@ Thème sombre (marine `#0B1526` / or `#F2C14E`), shell unique `src/components/Ap
 
 | Page | Contenu |
 |---|---|
-| `/` | Tableau de bord : statistiques (dossiers, preuves, URLs analysées, sites frauduleux), derniers dossiers, dernières détections, actions rapides ; amorçage du jeu de démo en un clic si la base est vide |
+| `/` | **Page d'accueil professionnelle** : hero (logo, slogan, actions), 6 cartes de fonctionnalités, déroulé d'une enquête en 4 étapes, garanties de sécurité, appel à l'action — responsive (grilles 1/2/3 colonnes, menu hamburger sur mobile) |
+| `/tableau-de-bord` | Tableau de bord : statistiques (dossiers, preuves, URLs analysées, sites frauduleux), derniers dossiers, dernières détections, actions rapides ; amorçage du jeu de démo en un clic si la base est vide |
 | `/dossiers` | Liste des dossiers avec **recherche texte** (référence, titre, catégorie), filtre par statut, **création** (référence auto `CT-AAAA-NNN`) |
 | `/dossiers/:id` | Détail : classification (statut), **import de preuve** (métadonnées + magic bytes), vérification, comparaison de copie, téléchargement, chaîne de custodie, onglet **sites analysés** (analyse rattachée au dossier), rapport PDF |
 | `/detection` | Analyse d'URL (choix du dossier de rattachement) + verdict / score / indicateurs + historique global |
@@ -262,7 +264,8 @@ src/lib/pdf.ts                   Génération du rapport PDF (pdfkit)
 src/lib/detection/brands.ts      Marques surveillées, mots-clés, TLD suspects
 src/lib/detection/url-analysis.ts  Analyse lexicale de l'URL (pur)
 src/lib/detection/content.ts     Analyse de contenu + protection SSRF (pur)
-src/app/page.tsx                 Tableau de bord (/)
+src/app/page.tsx                 Page d'accueil professionnelle (/)
+src/app/tableau-de-bord/page.tsx Tableau de bord (/tableau-de-bord)
 src/app/dossiers/page.tsx        Liste + recherche + création (/dossiers)
 src/app/dossiers/[id]/page.tsx   Détail : preuves, sites, PDF (/dossiers/:id)
 src/app/detection/page.tsx       Détection d'URL + historique (/detection)

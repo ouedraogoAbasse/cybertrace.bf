@@ -111,7 +111,7 @@ export function renderCaseReport(out: Writable, data: CaseReportData): Promise<v
 
     const drawHeader = (continuation = false) => {
       doc.rect(0, 0, pageWidth, continuation ? 56 : 96).fill(COLORS.navy);
-      const logoPath = path.join(process.cwd(), "public", "logo.png");
+      const logoPath = path.join(process.cwd(), "public", "logo.jpeg");
       let textX = MARGIN;
       if (fs.existsSync(logoPath)) {
         try {

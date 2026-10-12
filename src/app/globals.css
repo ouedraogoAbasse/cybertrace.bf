@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
+/* Application en thème sombre (marine #0B1526, accent or #F2C14E). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0b1526;
+  --foreground: #e2e8f0;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,15 +14,8 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }

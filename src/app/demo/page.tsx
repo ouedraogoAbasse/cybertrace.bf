@@ -7,10 +7,12 @@
  * comparer une copie modifiee, consulter la chaine de custodie et
  * telecharger le rapport PDF.
  *
- * NOTE (Membre 1) : cette page consomme uniquement des routes API ;
- * elle sera remplacee par l'interface complete de l'application.
+ * Cette page est conservee comme scenario de demonstration guidé ; l'interface
+ * complete de l'application vit sur /, /dossiers et /detection.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { apiFetch } from "@/lib/client";
 
 type Dossier = {
   id: string;
@@ -96,25 +98,33 @@ export default function Demo() {
   const notifier = (type: "ok" | "erreur", texte: string) => setMessage({ type, texte });
 
   const chargerDossiers = useCallback(async () => {
-    const res = await fetch("/api/cases");
-    if (!res.ok) return;
-    const corps = await res.json();
-    setDossiers(corps.dossiers);
-    if (corps.dossiers.length > 0) setDossierId((c) => c || corps.dossiers[0].id);
+    try {
+      const corps = await apiFetch<{ dossiers: Dossier[] }>("/api/cases");
+      setDossiers(corps.dossiers);
+      if (corps.dossiers.length > 0) setDossierId((c) => c || corps.dossiers[0].id);
+    } catch {
+      /* pas de donnees : la page affichera ses etats vides */
+    }
   }, []);
 
   const chargerPreuves = useCallback(async (id: string) => {
     if (!id) return;
-    const res = await fetch(`/api/cases/${id}/evidence`);
-    if (!res.ok) return;
-    setPreuves((await res.json()).preuves);
+    try {
+      const corps = await apiFetch<{ preuves: Preuve[] }>(`/api/cases/${id}/evidence`);
+      setPreuves(corps.preuves);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const chargerAnalyses = useCallback(async (id: string) => {
     if (!id) return;
-    const res = await fetch(`/api/cases/${id}/sites`);
-    if (!res.ok) return;
-    setAnalyses((await res.json()).analyses);
+    try {
+      const corps = await apiFetch<{ analyses: AnalyseSite[] }>(`/api/cases/${id}/sites`);
+      setAnalyses(corps.analyses);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   // Chargement initial : le setState n'est atteint qu'apres le fetch (async).
@@ -141,12 +151,10 @@ export default function Demo() {
       if (provenance) fd.append("provenance", provenance);
       if (collecte) fd.append("dateCollecteDeclaree", new Date(collecte).toISOString());
 
-      const res = await fetch(`/api/cases/${dossierId}/evidence`, { method: "POST", body: fd });
-      const corps = await res.json();
-      if (!res.ok) {
-        notifier("erreur", `Import refusé : ${corps.error}`);
-        return;
-      }
+      const corps = await apiFetch<{
+        evidence: Preuve;
+        doublon: { de: { nomOriginal: string } } | null;
+      }>(`/api/cases/${dossierId}/evidence`, { method: "POST", body: fd });
       notifier("ok", `Preuve enregistrée — SHA-256 : ${corps.evidence.empreinteInitiale}`);
       if (corps.doublon) {
         notifier("ok", `Preuve enregistrée, MAIS doublon de « ${corps.doublon.de.nomOriginal} » déjà présent dans le dossier`);
@@ -158,6 +166,8 @@ export default function Demo() {
       const form = e.target as HTMLFormElement;
       form.reset();
       chargerPreuves(dossierId);
+    } catch (err) {
+      notifier("erreur", `Import refusé : ${err instanceof Error ? err.message : "erreur inconnue"}`);
     } finally {
       setEnCours(false);
     }
@@ -168,16 +178,10 @@ export default function Demo() {
     if (!urlSaisie.trim()) return;
     setEnCours(true);
     try {
-      const res = await fetch("/api/sites/analyze", {
+      const corps = await apiFetch<{ analyse: AnalyseSite }>("/api/sites/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: urlSaisie, caseId: dossierId || undefined }),
       });
-      const corps = await res.json();
-      if (!res.ok) {
-        notifier("erreur", `Analyse refusée : ${corps.error}`);
-        return;
-      }
       setAnalyseCourante(corps.analyse);
       setUrlSaisie("");
       notifier(
@@ -185,6 +189,8 @@ export default function Demo() {
         `Verdict : ${corps.analyse.verdict} (risque ${corps.analyse.score}/100)`,
       );
       chargerAnalyses(dossierId);
+    } catch (err) {
+      notifier("erreur", `Analyse refusée : ${err instanceof Error ? err.message : "erreur inconnue"}`);
     } finally {
       setEnCours(false);
     }
@@ -193,10 +199,11 @@ export default function Demo() {
   const verifier = async (id: string) => {
     setEnCours(true);
     try {
-      const res = await fetch(`/api/evidence/${id}/verify`, { method: "POST" });
-      const corps = await res.json();
+      const corps = await apiFetch<Verdict>(`/api/evidence/${id}/verify`, { method: "POST" });
       setVerdicts((v) => ({ ...v, [id]: corps }));
       if (histories[id]) chargerHistorique(id);
+    } catch (err) {
+      notifier("erreur", err instanceof Error ? err.message : "Echec de la vérification");
     } finally {
       setEnCours(false);
     }
@@ -210,50 +217,40 @@ export default function Demo() {
     try {
       const fd = new FormData();
       fd.append("file", fichier);
-      const res = await fetch(`/api/evidence/${id}/compare`, { method: "POST", body: fd });
-      const corps = await res.json();
-      setVerdicts((v) => ({ ...v, [id]: { ...corps, empreinteRecalculee: corps.empreinteCopie } }));
+      const corps = await apiFetch<Verdict>(`/api/evidence/${id}/compare`, { method: "POST", body: fd });
+      setVerdicts((v) => ({ ...v, [id]: { ...corps, empreinteRecalculee: corps.empreinteCopie ?? null } }));
       setComparateurs((c) => ({ ...c, [id]: null }));
+    } catch (err) {
+      notifier("erreur", err instanceof Error ? err.message : "Echec de la comparaison");
     } finally {
       setEnCours(false);
     }
   };
 
   const chargerHistorique = async (id: string) => {
-    const res = await fetch(`/api/evidence/${id}/custody`);
-    if (!res.ok) return;
-    const corps = await res.json();
-    setHistories((h) => ({ ...h, [id]: corps }));
+    try {
+      const corps = await apiFetch<{ evenements: Evenement[]; chaineCustodie: Chaine }>(
+        `/api/evidence/${id}/custody`,
+      );
+      setHistories((h) => ({ ...h, [id]: corps }));
+    } catch {
+      /* ignore */
+    }
   };
 
   const dossier = dossiers.find((d) => d.id === dossierId);
 
   return (
-    <div className="min-h-screen bg-[#0B1526] text-slate-200">
-      {/* En-tête de marque */}
-      <header className="border-b-4 border-[#2E86FF] bg-gradient-to-b from-[#111F38] to-[#0B1526]">
-        <div className="mx-auto flex max-w-5xl items-center gap-5 px-6 py-6">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="CyberTrace BF" className="h-20 w-20 rounded-xl" />
-          <div>
-            <h1 className="text-3xl font-bold text-white">
-              Cyber<span className="text-[#5FA8FF]">Trace</span>
-              <span className="text-[#F2C14E]"> BF</span>
-            </h1>
-            <p className="text-sm text-[#F2C14E]">La preuve numérique, préservée et traçable.</p>
-            <p className="mt-1 text-xs text-slate-400">
-              Démonstration du module Preuves numériques — données fictives
-            </p>
-          </div>
+    <div className="space-y-8">
+        <div>
+          <h1 className="text-2xl font-bold text-white">
+            Scénario de démonstration — module Preuves numériques
+          </h1>
+          <p className="text-sm text-slate-400">
+            Suite complète sans Postman : importer, vérifier, comparer, tracer et exporter —
+            données fictives.
+          </p>
         </div>
-        <div className="flex h-1">
-          <div className="flex-1 bg-[#EF2B2D]" />
-          <div className="w-10 bg-[#F2C14E]" />
-          <div className="flex-1 bg-[#009E49]" />
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl space-y-8 px-6 py-8">
         {message && (
           <div
             className={`rounded-lg border px-4 py-3 text-sm ${
@@ -611,7 +608,6 @@ export default function Demo() {
             ni la date réelle de collecte.
           </p>
         </section>
-      </main>
     </div>
   );
 }

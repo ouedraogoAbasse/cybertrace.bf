@@ -1,18 +1,18 @@
 "use client";
 /**
- * Cote client : comptes de demonstration, fetch unifie (en-tete x-user-id)
- * et formatages partages.
+ * Cote client : session d'authentification, fetch unifie et formatages
+ * partages.
  *
- * BRANCHEMENT AUTH (Membre 1) : le compte selectionne est stocke en
- * localStorage et transmis par l'en-tête x-user-id, que resolveActor() lit
- * cote serveur. Pour passer a une vraie session, il suffit de supprimer la
- * lecture du localStorage ici — resolveActor deviendra la source de verite.
+ * L'identite ne vit QUE dans le cookie HttpOnly pose par POST /api/auth/login
+ * (aucun compte n'est stocke dans le navigateur) ; ce module ne fait que
+ * refleter GET /api/auth/me. L'ancien selecteur de compte de demonstration
+ * (localStorage + en-tete x-user-id) a ete remplace par la vraie connexion.
  */
 import { useCallback, useEffect, useState } from "react";
 
 export type Role = "ADMIN" | "ANALYSTE" | "LECTEUR";
 
-export type Compte = { id: string; nom: string; email: string; role: Role };
+export type Compte = { id: string; nom: string; email: string; role: Role; statut?: string };
 
 export type Dossier = {
   id: string;
@@ -81,64 +81,126 @@ export class ApiErreur extends Error {
   }
 }
 
-// --- Compte de demonstration ------------------------------------------------
+// --- Session d'authentification ---------------------------------------------
 
-const CLE_COMPTE = "cybertrace-compte";
+/** Etat de session partage par tous les composants (source : /api/auth/me). */
+let etatSession: { compte: Compte | null; pret: boolean } = { compte: null, pret: false };
+let chargementSession: Promise<void> | null = null;
+const ecouteursSession = new Set<() => void>();
 
-export function lireCompte(): Compte | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const brut = localStorage.getItem(CLE_COMPTE);
-    return brut ? (JSON.parse(brut) as Compte) : null;
-  } catch {
-    return null;
-  }
+function publierSession() {
+  for (const fn of ecouteursSession) fn();
 }
 
-export function changerCompte(compte: Compte | null) {
-  if (compte) localStorage.setItem(CLE_COMPTE, JSON.stringify(compte));
-  else localStorage.removeItem(CLE_COMPTE);
-  window.dispatchEvent(new Event("cybertrace-compte"));
+/**
+ * Recharge l'etat de session depuis GET /api/auth/me (cookie HttpOnly).
+ * Appel unique et partage : plusieurs composants peuvent l'appeler, une seule
+ * requete part. `force` sert apres connexion / deconnexion.
+ */
+export function rechargerSession(force = false): Promise<void> {
+  if (!force && sessionDejaChargee()) return Promise.resolve();
+  if (!force && chargementSession) return chargementSession;
+
+  chargementSession = (async () => {
+    try {
+      const r = await apiFetch<{ utilisateur: Compte }>("/api/auth/me", { sansRedirection401: true });
+      etatSession = { compte: r.utilisateur, pret: true };
+    } catch {
+      // 401 = aucune session (ou erreur reseau) : on considere l'invite.
+      etatSession = { compte: null, pret: true };
+    } finally {
+      chargementSession = null;
+      publierSession();
+    }
+  })();
+  return chargementSession;
 }
 
-/** Compte courant, reactive au changement (selecteur de l'en-tete). */
+function sessionDejaChargee(): boolean {
+  return etatSession.pret;
+}
+
+/** Compte courant, reactive a la session (connexion / deconnexion comprise). */
 export function useCompte(): [Compte | null, (c: Compte | null) => void, boolean] {
-  const [compte, setCompte] = useState<Compte | null>(null);
-  const [pret, setPret] = useState(false);
+  const [etat, setEtat] = useState(etatSession);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCompte(lireCompte());
-    setPret(true);
-    const maj = () => setCompte(lireCompte());
-    window.addEventListener("cybertrace-compte", maj);
-    window.addEventListener("storage", maj);
+    const maj = () => setEtat(etatSession);
+    ecouteursSession.add(maj);
+    void rechargerSession();
     return () => {
-      window.removeEventListener("cybertrace-compte", maj);
-      window.removeEventListener("storage", maj);
+      ecouteursSession.delete(maj);
     };
   }, []);
 
-  return [compte, changerCompte, pret];
+  // Mise a jour optimiste locale (utilisee par la page de connexion).
+  const majLocale = (compte: Compte | null) => {
+    etatSession = { compte, pret: true };
+    publierSession();
+  };
+
+  return [etat.compte, majLocale, etat.pret];
 }
 
-/** Vrai si le compte peut ecrire (creer, importer, verifier...). */
+/** Ouvre une session reelle : POST /api/auth/login puis rafraichit l'etat. */
+export async function connexion(email: string, motDePasse: string): Promise<Compte> {
+  const r = await apiFetch<{ utilisateur: Compte }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, motDePasse }),
+    sansRedirection401: true,
+  });
+  etatSession = { compte: r.utilisateur, pret: true };
+  publierSession();
+  return r.utilisateur;
+}
+
+/** Ferme la session : POST /api/auth/logout (cookie efface cote serveur). */
+export async function deconnexion(): Promise<void> {
+  try {
+    await apiFetch("/api/auth/logout", { method: "POST", sansRedirection401: true });
+  } finally {
+    etatSession = { compte: null, pret: true };
+    publierSession();
+  }
+}
+
+/** Vrai si le compte courant peut ecrire (creer, importer, verifier...). */
 export function peutEcrire(compte: Compte | null): boolean {
-  // Sans compte selectionne, l'API retombe sur l'utilisateur « dev » (ANALYSTE).
-  return !compte || compte.role === "ADMIN" || compte.role === "ANALYSTE";
+  return compte !== null && (compte.role === "ADMIN" || compte.role === "ANALYSTE");
+}
+
+/** Vrai si le compte courant est administrateur (gestion des comptes). */
+export function estAdmin(compte: Compte | null): boolean {
+  return compte?.role === "ADMIN";
 }
 
 // --- Appel d'API -------------------------------------------------------------
 
-export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const compte = lireCompte();
+/**
+ * Fetch unifie. L'identite voyage dans le cookie de session (HttpOnly) —
+ * aucun en-tete d'identification n'est ajoute ici. En cas de 401 hors
+ * /api/auth, l'utilisateur est redirige vers la page de connexion avec la
+ * page courante en parametre `next`.
+ */
+export async function apiFetch<T>(
+  url: string,
+  init?: RequestInit & { sansRedirection401?: boolean },
+): Promise<T> {
   const headers = new Headers(init?.headers);
-  if (compte) headers.set("x-user-id", compte.id);
   if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const res = await fetch(url, { ...init, headers });
+  const sansRedirection = init?.sansRedirection401 === true || url.startsWith("/api/auth/");
+  const res = await fetch(url, { ...init, headers, credentials: "same-origin" });
   const corps = await res.json().catch(() => null);
+
+  if (res.status === 401 && !sansRedirection && typeof window !== "undefined") {
+    const actuel = window.location.pathname + window.location.search;
+    if (!actuel.startsWith("/connexion")) {
+      window.location.assign(`/connexion?next=${encodeURIComponent(actuel)}`);
+    }
+  }
+
   if (!res.ok) {
     throw new ApiErreur(res.status, corps?.error ?? `Erreur HTTP ${res.status}`, corps?.code);
   }

@@ -20,7 +20,7 @@ const USERS = [
 ];
 
 /** Mot de passe de demonstration des trois comptes (comptes fictifs). */
-export const MOT_DE_PASSE_DEMO = "CyberTrace2026";
+const MOT_DE_PASSE_DEMO = "CyberTrace2026";
 
 export async function POST() {
   if (process.env.NODE_ENV === "production") {

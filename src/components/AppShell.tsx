@@ -1,21 +1,22 @@
 "use client";
 /**
- * Coquille de l'application : en-tete (logo, navigation, selecteur de compte
- * de demonstration) et pied de page.
+ * Coquille de l'application : en-tete (logo, navigation, session), menu
+ * mobile et pied de page.
  *
- * - Desktop : logo a gauche, navigation centree, compte a droite.
+ * - Desktop : logo a gauche, navigation centree, session a droite.
  * - Mobile  : navigation repliee derriere un bouton « hamburger ».
  *
- * Le selecteur choisit un compte actif ; son identifiant part dans l'en-tête
- * x-user-id de tous les appels API (voir src/lib/client.ts). A remplacer par
- * la vraie connexion du Membre 1.
+ * L'identite provient de la session reelle (cookie HttpOnly, GET
+ * /api/auth/me) : l'en-tete affiche le compte + son badge de role et un
+ * bouton de deconnexion. Sans session, toute page autre que l'accueil et la
+ * connexion redirige vers /connexion?next=<page>.
  */
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { apiFetch, changerCompte, lireCompte, useCompte, type Compte, type Role } from "@/lib/client";
+import { deconnexion, estAdmin, useCompte, type Role } from "@/lib/client";
 
 const LIENS = [
   { href: "/", libelle: "Accueil" },
@@ -23,7 +24,11 @@ const LIENS = [
   { href: "/dossiers", libelle: "Dossiers" },
   { href: "/detection", libelle: "Détection" },
   { href: "/demo", libelle: "Démo jury" },
+  { href: "/comptes", libelle: "Comptes", admin: true },
 ];
+
+/** Pages accessibles sans session. */
+const CHEMINS_PUBLICS = ["/", "/connexion"];
 
 const COULEUR_ROLE: Record<Role, string> = {
   ADMIN: "bg-[#F2C14E] text-[#0B1526]",
@@ -33,24 +38,18 @@ const COULEUR_ROLE: Record<Role, string> = {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const chemin = usePathname();
-  const [compte, setCompte, comptePret] = useCompte();
-  const [comptes, setComptes] = useState<Compte[]>([]);
+  const router = useRouter();
+  const [compte, , comptePret] = useCompte();
   const [menuOuvert, setMenuOuvert] = useState(false);
 
-  // Liste des comptes de demonstration ; aucun compte -> selection par defaut
-  // de l'analyste (l'API aurait de toute facon retombe sur le compte « dev »).
+  const estPublic = CHEMINS_PUBLICS.some((p) => (p === "/" ? chemin === "/" : chemin.startsWith(p)));
+
+  // Garde de session : sans compte, toute page protegee est redirigee vers
+  // la page de connexion (avec retour sur la page demandee apres connexion).
   useEffect(() => {
-    apiFetch<{ utilisateurs: Compte[] }>("/api/users")
-      .then((r) => {
-        setComptes(r.utilisateurs);
-        if (!lireCompte() && r.utilisateurs.length > 0) {
-          const parDefaut =
-            r.utilisateurs.find((u) => u.role === "ANALYSTE") ?? r.utilisateurs[0];
-          changerCompte(parDefaut);
-        }
-      })
-      .catch(() => setComptes([]));
-  }, []);
+    if (!comptePret || compte || estPublic) return;
+    router.replace(`/connexion?next=${encodeURIComponent(chemin)}`);
+  }, [comptePret, compte, estPublic, chemin, router]);
 
   const estActif = (href: string) =>
     href === "/" ? chemin === "/" : chemin.startsWith(href);
@@ -61,6 +60,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ? "bg-[#F2C14E]/15 font-semibold text-[#F2C14E]"
         : "text-slate-300 hover:bg-slate-700/50 hover:text-white"
     }`;
+
+  const liensVisibles = LIENS.filter((l) => !l.admin || estAdmin(compte));
+
+  const seDeconnecter = async () => {
+    setMenuOuvert(false);
+    await deconnexion();
+    router.replace("/");
+    router.refresh();
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-[#0B1526] text-slate-200">
@@ -81,38 +89,46 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Navigation desktop : centree */}
           <nav className="mx-auto hidden items-center gap-1 text-sm md:flex">
-            {LIENS.map((l) => (
+            {liensVisibles.map((l) => (
               <Link key={l.href} href={l.href} className={styleLien(l.href)}>
                 {l.libelle}
               </Link>
             ))}
           </nav>
 
-          {/* Compte de demonstration + bouton menu */}
+          {/* Session + bouton menu */}
           <div className="ml-auto flex items-center gap-2 md:ml-0">
-            {compte && (
-              <span
-                className={`hidden rounded px-1.5 py-0.5 text-[10px] font-bold sm:inline ${COULEUR_ROLE[compte.role]}`}
-              >
-                {compte.role}
-              </span>
-            )}
-            <select
-              value={comptePret && compte ? compte.id : ""}
-              onChange={(e) => {
-                const choisi = comptes.find((u) => u.id === e.target.value);
-                if (choisi) setCompte(choisi);
-              }}
-              className="max-w-[150px] truncate rounded-lg border border-slate-600 bg-[#111F38] px-2 py-1.5 text-xs text-white focus:border-[#F2C14E] focus:outline-none sm:max-w-[190px]"
-              title="Compte de démonstration (l'authentification réelle viendra avec le Membre 1)"
-            >
-              {!comptePret || !compte ? <option value="">—</option> : null}
-              {comptes.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.nom} ({u.role})
-                </option>
+            {comptePret &&
+              (compte ? (
+                <>
+                  <span
+                    className={`hidden rounded px-1.5 py-0.5 text-[10px] font-bold sm:inline ${COULEUR_ROLE[compte.role]}`}
+                    title={compte.email}
+                  >
+                    {compte.role}
+                  </span>
+                  <span
+                    className="hidden max-w-[160px] truncate text-xs text-slate-300 lg:inline"
+                    title={compte.email}
+                  >
+                    {compte.nom}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={seDeconnecter}
+                    className="rounded-lg border border-slate-600 px-2.5 py-1.5 text-xs text-slate-300 transition-colors hover:border-[#F2C14E] hover:text-[#F2C14E]"
+                  >
+                    Déconnexion
+                  </button>
+                </>
+              ) : (
+                <Link
+                  href="/connexion"
+                  className="rounded-lg bg-[#F2C14E] px-3 py-1.5 text-xs font-semibold text-[#0B1526] transition hover:brightness-110"
+                >
+                  Connexion
+                </Link>
               ))}
-            </select>
 
             {/* Hamburger (mobile) */}
             <button
@@ -151,7 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {menuOuvert && (
             <nav className="w-full border-t border-slate-700 pt-2 md:hidden">
               <ul className="flex flex-col gap-1 text-sm">
-                {LIENS.map((l) => (
+                {liensVisibles.map((l) => (
                   <li key={l.href}>
                     <Link
                       href={l.href}
@@ -162,6 +178,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </Link>
                   </li>
                 ))}
+                {compte && (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={seDeconnecter}
+                      className="block w-full rounded-lg px-3 py-1.5 text-left text-slate-300 hover:bg-slate-700/50 hover:text-white"
+                    >
+                      Déconnexion — {compte.nom}
+                    </button>
+                  </li>
+                )}
               </ul>
             </nav>
           )}

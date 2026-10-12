@@ -274,3 +274,4 @@ src/app/api/...                  Routes API (dossiers, preuves, détection, comp
 tests/                           Vitest : unitaires + intégration (79 tests)
 storage/                         Preuves chiffrées (ignoré par Git)
 ```
+"# cybertrace.bf" 
